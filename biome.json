@@ -1,0 +1,18 @@
+{
+   "$schema": "https://biomejs.dev/schemas/1.8.1/schema.json",
+   "organizeImports": {
+      "enabled": true
+   },
+   "linter": {
+      "rules": {
+         "suspicious": {
+            "noArrayIndexKey": "off"
+         }
+      }
+   },
+   "formatter": {
+      "lineWidth": 75,
+      "indentStyle": "tab",
+      "indentWidth": 3
+   }
+}

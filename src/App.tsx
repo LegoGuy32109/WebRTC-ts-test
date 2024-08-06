@@ -1,18 +1,11 @@
-// import { useState } from "react";
+import { useState } from "react";
 import "./App.css";
 
-let pc: RTCPeerConnection;
-
 function App() {
-	// const [selfConnection, setSelfConnection] =
-	// 	useState<RTCPeerConnection>();
-	// const [descriptions, setDescriptions] = useState<{
-	// 	local: null | object;
-	// 	remote: null | object;
-	// }>({
-	// 	local: null,
-	// 	remote: null,
-	// });
+	const [pc, setPc] = useState<RTCPeerConnection>();
+	const [channel, setChannel] = useState<RTCDataChannel>();
+
+	const [msgToSend, setMsgToSend] = useState<string>("");
 
 	function outputCurrentCandidates(
 		description: RTCSessionDescription,
@@ -29,15 +22,7 @@ function App() {
 	async function gather() {
 		const candidates: RTCIceCandidate[] = [];
 
-		let timeoutReached = false;
-		setTimeout(() => {
-			timeoutReached = true;
-			if (pc.localDescription) {
-				outputCurrentCandidates(pc.localDescription, candidates);
-			}
-		}, 4000);
-
-		pc = new RTCPeerConnection({
+		const newPc = new RTCPeerConnection({
 			iceCandidatePoolSize: 16,
 			iceServers: [
 				{
@@ -48,15 +33,17 @@ function App() {
 				},
 			],
 		});
-		pc.onicecandidate = (e) => {
-			if (!e.candidate) {
-				console.error("No candidate", e);
+		newPc.onicecandidate = (iceEvt) => {
+			if (!iceEvt.candidate) {
+				console.error("No candidate", iceEvt);
 				return;
 			}
-			console.log("Candidate:", e.candidate);
-			candidates.push(e.candidate);
+			console.log("Candidate:", iceEvt.candidate);
+			candidates.push(iceEvt.candidate);
 		};
-		pc.onicegatheringstatechange = function (this: RTCPeerConnection) {
+		newPc.onicegatheringstatechange = function (
+			this: RTCPeerConnection,
+		) {
 			console.log("Ice state change: ", this.iceGatheringState);
 			if (
 				!timeoutReached &&
@@ -66,25 +53,42 @@ function App() {
 				outputCurrentCandidates(this.localDescription, candidates);
 			}
 		};
-		pc.onsignalingstatechange = function (this: RTCPeerConnection) {
+		newPc.onsignalingstatechange = function (this: RTCPeerConnection) {
 			console.log("Signal state change: ", this.signalingState);
 		};
+		newPc.ondatachannel = (channelEvt) => console.log(channelEvt);
 
-		pc.createDataChannel("josh-test");
-		pc.createOffer().then((offer) => pc.setLocalDescription(offer));
+		const masterChannel = newPc.createDataChannel("chat", {
+			negotiated: true,
+			id: 0,
+		});
+		masterChannel.onopen = (event) => {
+			console.log(event);
+			masterChannel.send("Hello from Host!");
+		};
+		masterChannel.onmessage = (msgEvt) => {
+			console.log(msgEvt.data, msgEvt);
+		};
+		masterChannel.onerror = (errEvt) => console.error(errEvt);
+		setChannel(masterChannel);
+
+		const offer = await newPc.createOffer();
+		await newPc.setLocalDescription(offer);
+
+		let timeoutReached = false;
+		setTimeout(() => {
+			timeoutReached = true;
+			if (newPc?.localDescription) {
+				outputCurrentCandidates(newPc.localDescription, candidates);
+			}
+		}, 4000);
+
+		setPc(newPc);
 	}
 
 	async function recieve() {
 		const offerMsg = prompt("Give offer and candidates");
 		let offerCandidates: RTCIceCandidate[];
-
-		let timeoutReached = false;
-		setTimeout(() => {
-			timeoutReached = true;
-			if (pc.localDescription) {
-				outputCurrentCandidates(pc.localDescription, candidates);
-			}
-		}, 4000);
 
 		let offer: RTCSessionDescriptionInit;
 		if (offerMsg) {
@@ -101,7 +105,7 @@ function App() {
 		}
 
 		const candidates: RTCIceCandidate[] = [];
-		pc = new RTCPeerConnection({
+		const newPc = new RTCPeerConnection({
 			iceCandidatePoolSize: 16,
 			iceServers: [
 				{
@@ -112,15 +116,26 @@ function App() {
 				},
 			],
 		});
-		pc.onicecandidate = (e) => {
-			if (!e.candidate) {
-				console.error("No candidate", e);
+
+		let timeoutReached = false;
+		setTimeout(() => {
+			timeoutReached = true;
+			if (newPc.localDescription) {
+				outputCurrentCandidates(newPc.localDescription, candidates);
+			}
+		}, 4000);
+
+		newPc.onicecandidate = (iceEvt) => {
+			if (!iceEvt.candidate) {
+				console.error("No candidate", iceEvt);
 				return;
 			}
-			console.log("Candidate:", e.candidate);
-			candidates.push(e.candidate);
+			console.log("Candidate:", iceEvt.candidate);
+			candidates.push(iceEvt.candidate);
 		};
-		pc.onicegatheringstatechange = function (this: RTCPeerConnection) {
+		newPc.onicegatheringstatechange = function (
+			this: RTCPeerConnection,
+		) {
 			console.log("Ice state change: ", this.iceGatheringState);
 			if (
 				!timeoutReached &&
@@ -130,15 +145,32 @@ function App() {
 				outputCurrentCandidates(this.localDescription, candidates);
 			}
 		};
-		pc.onsignalingstatechange = function (this: RTCPeerConnection) {
+		newPc.onsignalingstatechange = function (this: RTCPeerConnection) {
 			console.log("Signal state change: ", this.signalingState);
 		};
 
-		pc.setRemoteDescription(offer);
-		pc.createDataChannel("josh-test");
-		pc.createAnswer().then((answer) => pc.setLocalDescription(answer));
+		newPc.setRemoteDescription(offer);
+		newPc.ondatachannel = (channelEvt) => console.log(channelEvt);
+
+		const masterChannel = newPc.createDataChannel("chat", {
+			negotiated: true,
+			id: 0,
+		});
+		masterChannel.onopen = (event) => {
+			console.log(event);
+			masterChannel.send("Hello from Peer!");
+		};
+		masterChannel.onmessage = (msgEvt) => {
+			console.log(msgEvt.data, msgEvt);
+		};
+		masterChannel.onerror = (errEvt) => console.error(errEvt);
+		setChannel(masterChannel);
+
+		const answer = await newPc.createAnswer();
+		await newPc.setLocalDescription(answer);
+		setPc(newPc);
 		for (const candidate of offerCandidates) {
-			await pc.addIceCandidate(candidate);
+			await newPc.addIceCandidate(candidate);
 		}
 	}
 
@@ -159,9 +191,9 @@ function App() {
 			return;
 		}
 
-		pc.setRemoteDescription(answer);
+		pc?.setRemoteDescription(answer);
 		for (const candidate of answerCandidates) {
-			pc.addIceCandidate(candidate);
+			pc?.addIceCandidate(candidate);
 		}
 	}
 
@@ -172,22 +204,41 @@ function App() {
 				<button type="button" onClick={gather}>
 					Gather
 				</button>
+				<button type="button" onClick={accept} disabled={!pc}>
+					Accept
+				</button>
 				<br />
 				<button type="button" onClick={recieve}>
 					Recieve
 				</button>
-				<button type="button" onClick={accept}>
-					Accept
-				</button>
 			</div>
 			<p className="read-the-docs">Demo attempting to use WebRTC</p>
-			<canvas
+			<div className="card">
+				<form>
+					<input
+						type="text"
+						value={msgToSend}
+						onChange={(evt) => setMsgToSend(evt.target.value)}
+					/>
+					<button
+						type="submit"
+						onClick={(event) => {
+							event.preventDefault();
+							channel?.send(msgToSend);
+							setMsgToSend("");
+						}}
+					>
+						Send
+					</button>
+				</form>
+			</div>
+			{/*<canvas
 				style={{
 					backgroundColor: "gray",
 					width: "300px",
 					height: "300px",
 				}}
-			/>
+			/> */}
 		</>
 	);
 }

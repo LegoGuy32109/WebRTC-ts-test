@@ -25,14 +25,51 @@ async function outputCurrentCandidates(
 		.catch(console.error);
 }
 
+function createChannel(
+	newPc: RTCPeerConnection,
+	onChannelSet: (channel: RTCDataChannel) => void,
+	onPopupMsg: (message: string, seconds?: number) => void,
+) {
+	const masterChannel = newPc.createDataChannel("chat", {
+		negotiated: true,
+		id: 0,
+	});
+	masterChannel.onopen = (event) => {
+		console.log(event);
+		onPopupMsg("Data channel open");
+	};
+	masterChannel.onclose = (event) => {
+		console.log(event);
+		onPopupMsg("Data channel closed :(", 5);
+	};
+	masterChannel.onmessage = (msgEvt) => {
+		console.log(msgEvt.data, msgEvt);
+		onPopupMsg(msgEvt.data, 5);
+	};
+	masterChannel.onerror = (errEvt) => console.error(errEvt);
+	onChannelSet(masterChannel);
+}
+
 export async function gather(
 	onPcSet: (pc: RTCPeerConnection) => void,
 	onChannelSet: (channel: RTCDataChannel) => void,
 	onPopupMsg: (message: string, seconds?: number) => void,
 ) {
 	const candidates: RTCIceCandidate[] = [];
-
 	const newPc = new RTCPeerConnection(peerConnectionSettings);
+
+	let timeoutReached = false;
+	setTimeout(() => {
+		timeoutReached = true;
+		if (newPc?.localDescription) {
+			outputCurrentCandidates(
+				newPc.localDescription,
+				candidates,
+				onPopupMsg,
+			);
+		}
+	}, 4000);
+
 	newPc.onicecandidate = (iceEvt) => {
 		if (!iceEvt.candidate) {
 			console.error("No candidate", iceEvt);
@@ -61,45 +98,14 @@ export async function gather(
 
 	onPcSet(newPc);
 
-	const masterChannel = newPc.createDataChannel("chat", {
-		negotiated: true,
-		id: 0,
-	});
-	masterChannel.onopen = (event) => {
-		console.log(event);
-		onPopupMsg("Data channel open");
-	};
-	masterChannel.onclose = (event) => {
-		console.log(event);
-		onPopupMsg("Data channel closed :(", 5);
-	};
-	masterChannel.onmessage = (msgEvt) => {
-		console.log(msgEvt.data, msgEvt);
-		onPopupMsg(msgEvt.data, 5);
-	};
-	masterChannel.onerror = (errEvt) => console.error(errEvt);
-
-	onChannelSet(masterChannel);
+	createChannel(newPc, onChannelSet, onPopupMsg);
 
 	onPopupMsg(
 		"Creating offer... keep window focused to access clipboard",
 		10,
 	);
-
 	const offer = await newPc.createOffer();
 	await newPc.setLocalDescription(offer);
-
-	let timeoutReached = false;
-	setTimeout(() => {
-		timeoutReached = true;
-		if (newPc?.localDescription) {
-			outputCurrentCandidates(
-				newPc.localDescription,
-				candidates,
-				onPopupMsg,
-			);
-		}
-	}, 4000);
 }
 
 export async function recieve(
@@ -169,24 +175,8 @@ export async function recieve(
 
 	newPc.setRemoteDescription(offer);
 
-	const masterChannel = newPc.createDataChannel("chat", {
-		negotiated: true,
-		id: 0,
-	});
-	masterChannel.onopen = (event) => {
-		console.log(event);
-		onPopupMsg("Data channel open");
-	};
-	masterChannel.onclose = (event) => {
-		console.log(event);
-		onPopupMsg("Data channel closed :(", 5);
-	};
-	masterChannel.onmessage = (msgEvt) => {
-		console.log(msgEvt.data, msgEvt);
-		onPopupMsg(msgEvt.data, 5);
-	};
-	masterChannel.onerror = (errEvt) => console.error(errEvt);
-	onChannelSet(masterChannel);
+	createChannel(newPc, onChannelSet, onPopupMsg);
+
 	onPcSet(newPc);
 
 	const answer = await newPc.createAnswer();

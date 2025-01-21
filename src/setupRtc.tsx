@@ -43,6 +43,10 @@ function createChannel(
 		console.log(event);
 		onPopupMsg("Data channel closed :(", 5);
 	};
+	masterChannel.onclosing = (event) => {
+		console.log(event);
+		onPopupMsg("Data channel closing :(", 5);
+	};
 	masterChannel.onmessage = (msgEvt) => {
 		console.log(msgEvt.data, msgEvt);
 		onPopupMsg(msgEvt.data, 5);
@@ -93,9 +97,8 @@ export async function gather(
 			);
 		}
 	};
-	newPc.onsignalingstatechange = function (this: RTCPeerConnection) {
-		console.log("Signal state change: ", this.signalingState);
-	};
+
+	setupPeerConnectionLoggers(newPc);
 
 	onPcSet(newPc);
 
@@ -170,9 +173,8 @@ export async function recieve(
 			);
 		}
 	};
-	newPc.onsignalingstatechange = function (this: RTCPeerConnection) {
-		console.log("Signal state change: ", this.signalingState);
-	};
+
+	setupPeerConnectionLoggers(newPc);
 
 	newPc.setRemoteDescription(offer);
 
@@ -214,4 +216,15 @@ export async function accept(
 	for (const candidate of [...answerCandidates, undefined]) {
 		await pc.addIceCandidate(candidate);
 	}
+}
+function setupPeerConnectionLoggers(pc: RTCPeerConnection) {
+	pc.onsignalingstatechange = function (this: RTCPeerConnection) {
+		console.log("Signal state change: ", this.signalingState);
+	};
+	pc.onconnectionstatechange = function (this: RTCPeerConnection, event) {
+		console.log(this, event);
+	};
+	pc.onicecandidateerror = (error: RTCPeerConnectionIceErrorEvent) => {
+		console.log(error);
+	};
 }

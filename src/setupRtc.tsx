@@ -1,3 +1,4 @@
+// grab static turn credentials in global.xirsys.net/dashboard/services
 const peerConnectionSettings = {
 	iceServers: [
 		{

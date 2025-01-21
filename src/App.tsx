@@ -84,13 +84,14 @@ function App() {
 					</button>
 				</form>
 			</div>
-			{/*<canvas
-				style={{
-					backgroundColor: "gray",
-					width: "300px",
-					height: "300px",
-				}}
-			/> */}
+			{pc && (
+				<ul>
+					<li>Connection | {pc.connectionState}</li>
+					<li>Signaling | {pc.signalingState}</li>
+					<li>ICE Gathering | {pc.iceGatheringState}</li>
+					<li>ICE Connection | {pc.iceConnectionState}</li>
+				</ul>
+			)}
 		</>
 	);
 }

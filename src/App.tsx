@@ -1,98 +1,56 @@
-import { useState } from "react";
 import "./App.css";
+import SimpleChat from "./simpleChat";
+import { useState } from "react";
 
-import { gather, recieve, accept } from "./setupRtc";
+enum Tab {
+	SIMPLE_CHAT = 0,
+	MULTI_CHAT = 1,
+}
 
-function App() {
-	const [pc, setPc] = useState<RTCPeerConnection>();
-	const [channel, setChannel] = useState<RTCDataChannel>();
-
-	const [msgToSend, setMsgToSend] = useState<string>("");
-
-	const [messages, setMessages] = useState<
-		{ id: string; text: string }[]
-	>([]);
-
-	function popMsg(message: string, seconds = 2) {
-		const msgId = crypto.randomUUID();
-		setMessages((prevMsgs) => [
-			{ id: msgId, text: message },
-			...prevMsgs,
-		]);
-		setTimeout(
-			() =>
-				setMessages((prevMsg) =>
-					prevMsg.filter(({ id }) => id !== msgId),
-				),
-			seconds * 1000,
-		);
-	}
-
-	return (
-		<>
-			<h1>WebRTC (no trickle-ice)</h1>
-			<p className="read-the-docs">
-				Gathering ICE candidates before sharing offer, no signaling
-				server!
-			</p>
-			<div className="card">
-				{!pc ? (
-					<button
-						type="button"
-						onClick={() => gather(setPc, setChannel, popMsg)}
-					>
-						Gather
-					</button>
-				) : (
-					<button
-						type="button"
-						onClick={() => accept(pc, popMsg)}
-						disabled={channel?.readyState === "open"}
-					>
-						Accept
-					</button>
-				)}
-				<br />
-				<br />
+function NavTabs({
+	currentTab,
+	onNewTab,
+}: { currentTab: Tab; onNewTab: (value: Tab) => void }) {
+	const tabButtons = Object.values(Tab).reduce((acc, value) => {
+		if (typeof value === "string") {
+			acc.push(
 				<button
 					type="button"
-					onClick={() => recieve(setPc, setChannel, popMsg)}
-					disabled={!!pc}
+					onClick={() => onNewTab(Tab[value as keyof typeof Tab])}
+					key={value}
 				>
-					Recieve
-				</button>
-				{messages.map(({ id, text }) => (
-					<h4 key={id}>{text}</h4>
-				))}
-			</div>
-			<div className="card">
-				<form>
-					<input
-						type="text"
-						value={msgToSend}
-						onChange={(evt) => setMsgToSend(evt.target.value)}
-					/>
-					<button
-						type="submit"
-						onClick={(event) => {
-							event.preventDefault();
-							channel?.send(msgToSend);
-							setMsgToSend("");
-						}}
-					>
-						Send
-					</button>
-				</form>
-			</div>
-			{pc && (
-				<ul>
-					<li>Connection | {pc.connectionState}</li>
-					<li>Signaling | {pc.signalingState}</li>
-					<li>ICE Gathering | {pc.iceGatheringState}</li>
-					<li>ICE Connection | {pc.iceConnectionState}</li>
-				</ul>
-			)}
-		</>
+					{value}
+				</button>,
+			);
+		}
+		return acc;
+	}, [] as JSX.Element[]);
+
+	return <nav>{...tabButtons}</nav>;
+}
+
+function MultiChat() {
+	return <h1>Multi User Chat</h1>;
+}
+
+function App() {
+	const [currentTab, setCurrentTab] = useState(Tab.SIMPLE_CHAT);
+
+	function View() {
+		switch (currentTab) {
+			case Tab.SIMPLE_CHAT:
+				return <SimpleChat />;
+			case Tab.MULTI_CHAT:
+				return <MultiChat />;
+		}
+	}
+	return (
+		<div>
+			<nav>
+				<NavTabs onTabIndexUpdate={setCurrentTab} />
+			</nav>
+			<View />
+		</div>
 	);
 }
 

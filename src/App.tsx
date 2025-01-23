@@ -1,5 +1,6 @@
 import "./App.css";
 import SimpleChat from "./simpleChat";
+import MultiChat from "./multiChat";
 import { useState } from "react";
 
 enum Tab {
@@ -11,15 +12,30 @@ function NavTabs({
 	currentTab,
 	onNewTab,
 }: { currentTab: Tab; onNewTab: (value: Tab) => void }) {
-	const tabButtons = Object.values(Tab).reduce((acc, value) => {
+	function makeTabTitle(string: string) {
+		return string
+			.toLocaleLowerCase()
+			.replace("_", " ")
+			.split(" ")
+			.map((string) =>
+				string
+					.substring(0, 1)
+					.toUpperCase()
+					.concat(string.substring(1)),
+			)
+			.join(" ");
+	}
+
+	const tabButtons = Object.entries(Tab).reduce((acc, [key, value]) => {
 		if (typeof value === "string") {
 			acc.push(
 				<button
 					type="button"
 					onClick={() => onNewTab(Tab[value as keyof typeof Tab])}
 					key={value}
+					disabled={+key === currentTab}
 				>
-					{value}
+					{makeTabTitle(value)}
 				</button>,
 			);
 		}
@@ -27,10 +43,6 @@ function NavTabs({
 	}, [] as JSX.Element[]);
 
 	return <nav>{...tabButtons}</nav>;
-}
-
-function MultiChat() {
-	return <h1>Multi User Chat</h1>;
 }
 
 function App() {
@@ -47,7 +59,7 @@ function App() {
 	return (
 		<div>
 			<nav>
-				<NavTabs onTabIndexUpdate={setCurrentTab} />
+				<NavTabs onNewTab={setCurrentTab} currentTab={currentTab} />
 			</nav>
 			<View />
 		</div>

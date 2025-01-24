@@ -1,5 +1,3 @@
-// import { useState } from "react";
-
 // grab static turn credentials in global.xirsys.net/dashboard/services
 const peerConnectionSettings = {
 	iceServers: [
@@ -28,9 +26,10 @@ export async function generateRoomConnections(): Promise<
 interface Package {
 	description: RTCSessionDescription;
 	candidates: RTCIceCandidate[];
+	id: string;
 }
 
-interface RoomConnection {
+export interface RoomConnection {
 	peerConnection: RTCPeerConnection;
 	// the channel to communicate UDP data might not be created yet
 	channel?: RTCDataChannel;
@@ -65,6 +64,8 @@ async function generateRoomConnection(): Promise<RoomConnection> {
 			output.package = {
 				description: this.localDescription,
 				candidates: output.candidates,
+				// generate a id so we can match answers to offers in the accept function
+				id: crypto.randomUUID(),
 			};
 			setIceGatheringComplete("Completed Gathering Candidates");
 		}
@@ -133,6 +134,7 @@ async function receiveConnectionOffer(offer: Package) {
 			output.package = {
 				description: this.localDescription,
 				candidates: output.candidates,
+				id: offer.id,
 			};
 			setIceGatheringComplete("Completed Gathering Candidates");
 		}
@@ -160,4 +162,50 @@ async function receiveConnectionOffer(offer: Package) {
 	await iceGatheringComplete;
 
 	return output;
+}
+
+export async function acceptAnswer(
+	existingRoomConnections: RoomConnection[],
+	answerPackage: Package[],
+) {
+	// set up function to retireve the answer when searching for a room connection
+	let goodAnswer: Package | undefined;
+	function findGoodAnswer(offerPkgId: string) {
+		const answer = answerPackage.find((pkg) => pkg.id === offerPkgId);
+		goodAnswer = answer;
+		return !!answer;
+	}
+
+	const roomConnection = existingRoomConnections.find(
+		({ peerConnection: pc, package: offerPkg }) =>
+			!pc.remoteDescription &&
+			offerPkg?.id &&
+			// if an answer exists, will save to local variable to be accepted
+			findGoodAnswer(offerPkg.id),
+	);
+
+	if (!roomConnection || !goodAnswer) {
+		console.error(
+			"No room found to match given answer ids",
+			existingRoomConnections,
+			answerPackage,
+		);
+		return;
+	}
+
+	console.log(goodAnswer, roomConnection);
+
+	// a answer exists for a peer connection that hasn't been completed
+	roomConnection.peerConnection.setRemoteDescription(
+		goodAnswer.description,
+	);
+
+	// add all the answer's candidates in any order
+	await Promise.all(
+		goodAnswer.candidates.map((candidate) =>
+			roomConnection.peerConnection.addIceCandidate(candidate),
+		),
+	);
+	// To indicate the offer had no more candidates, pass in undefined
+	await roomConnection.peerConnection.addIceCandidate(undefined);
 }

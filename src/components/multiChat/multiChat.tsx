@@ -1,11 +1,51 @@
 import { useState } from "react";
-import { receiveConnectionOffers } from "../../setupMultiRtc";
+import {
+	generateRoomConnections,
+	receiveConnectionOffers,
+	acceptAnswer,
+	type RoomConnection,
+} from "../../setupMultiRtc";
 import CreateRoomButton from "./CreateRoomButton";
 
 const MAX_USERNAME_LENGTH = 21;
 
+// HOST
+// default
+// room just created
+// room has less than full players
+// room is full
+//
+// GUEST
+// default
+// accepted room offer
+// connected to room
+
+export enum Room_State {
+	DEFAULT = 0,
+	HOST_EMPTY = 1,
+	HOST_FILLING = 2,
+	HOST_FULL = 3,
+	GUEST_JOINING = 4,
+	GUEST_IN = 5,
+}
+
 export default function MultiChat() {
 	const [displayName, setDisplayName] = useState("");
+	const [roomState, setRoomState] = useState(Room_State.DEFAULT);
+	const [roomConnections, setRoomConnections] = useState(
+		[] as RoomConnection[],
+	);
+
+	function onNewConnections(connections: RoomConnection[]) {
+		// close all connections to terminate unused channels
+		setRoomConnections((prevConnections) => {
+			for (const room of prevConnections) {
+				room.peerConnection.close();
+			}
+
+			return connections;
+		});
+	}
 
 	return (
 		<>
@@ -17,7 +57,28 @@ export default function MultiChat() {
 					width: "80vw",
 				}}
 			>
-				<CreateRoomButton disabled={displayName.length === 0} />
+				<CreateRoomButton
+					roomState={roomState}
+					// disabled={displayName.length === 0}
+					onCreateRoom={async () => {
+						const peerConnections = await generateRoomConnections();
+						onNewConnections(peerConnections);
+						console.log(peerConnections);
+						console.log(
+							JSON.stringify(
+								peerConnections.map((pc) => pc.package),
+							),
+						);
+						setRoomState(Room_State.HOST_EMPTY);
+					}}
+					onAcceptAnswer={async () => {
+						const answerPackage = JSON.parse(
+							prompt("Paste in answer") ?? "",
+						);
+						await acceptAnswer(roomConnections, answerPackage);
+						console.log(roomConnections);
+					}}
+				/>
 				<input
 					id="displayName"
 					type="text"
@@ -35,7 +96,7 @@ export default function MultiChat() {
 				<button
 					type="button"
 					title="Have Room Offer in Clipboard"
-					disabled={displayName.length === 0}
+					// disabled={displayName.length === 0}
 					onClick={async () => {
 						const offerPackage = JSON.parse(
 							prompt("Paste in offer") ?? "",

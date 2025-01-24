@@ -1,3 +1,5 @@
+import { ROOM_SIZE } from "./components/multiChat/multiChat";
+
 // grab static turn credentials in global.xirsys.net/dashboard/services
 const peerConnectionSettings = {
 	iceServers: [
@@ -10,17 +12,12 @@ const peerConnectionSettings = {
 	],
 };
 
-const ROOM_SIZE = 4;
-
 export async function generateRoomConnections(): Promise<
 	RoomConnection[]
 > {
-	// const [offersMade, setOffersMade] = useState(0);
-
-	const connections = await Promise.all(
+	return await Promise.all(
 		Array.from({ length: ROOM_SIZE }, generateRoomConnection),
 	);
-	return connections;
 }
 
 interface Package {
@@ -168,7 +165,7 @@ export async function acceptAnswer(
 	existingRoomConnections: RoomConnection[],
 	answerPackage: Package[],
 ) {
-	// set up function to retireve the answer when searching for a room connection
+	// set up function to retrieve the answer when searching for a room connection
 	let goodAnswer: Package | undefined;
 	function findGoodAnswer(offerPkgId: string) {
 		const answer = answerPackage.find((pkg) => pkg.id === offerPkgId);
@@ -192,8 +189,6 @@ export async function acceptAnswer(
 		);
 		return;
 	}
-
-	console.log(goodAnswer, roomConnection);
 
 	// a answer exists for a peer connection that hasn't been completed
 	roomConnection.peerConnection.setRemoteDescription(

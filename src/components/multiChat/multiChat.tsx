@@ -8,17 +8,12 @@ import {
 import CreateRoomButton from "./CreateRoomButton";
 
 const MAX_USERNAME_LENGTH = 21;
+export const ROOM_SIZE = 4;
 
-// HOST
-// default
-// room just created
-// room has less than full players
-// room is full
-//
-// GUEST
-// default
-// accepted room offer
-// connected to room
+enum Server_Command {
+	ROOM_INFO = "#ROOM_INFO#",
+	ENTER = "#ENTER#",
+}
 
 export enum Room_State {
 	DEFAULT = 0,
@@ -31,7 +26,12 @@ export enum Room_State {
 
 export default function MultiChat() {
 	const [displayName, setDisplayName] = useState("");
-	const [roomState, setRoomState] = useState(Room_State.DEFAULT);
+	const [roomInfo, setRoomInfo] = useState({
+		state: Room_State.DEFAULT,
+		hostName: "",
+		guests: [] as string[],
+		messages: [] as string[],
+	});
 	const [roomConnections, setRoomConnections] = useState(
 		[] as RoomConnection[],
 	);
@@ -47,6 +47,172 @@ export default function MultiChat() {
 		});
 	}
 
+	function onMessageGetAsGuest(
+		channel: RTCDataChannel,
+		event: MessageEvent,
+	) {
+		console.log(event.data);
+		// Check if message includes a server command
+		// example: `#ROOM_INFO# {"hostName": "bilbo", ...}`
+		// WARN: This feels inefficent, fix splitting everything
+		const tokens: string[] = event.data
+			.split(" ")
+			.filter((word: string) => word);
+		if (
+			Object.values(Server_Command).includes(
+				(tokens.at(0) ?? "") as Server_Command,
+			)
+		) {
+			const [serverCommand, ...commandTokens] = tokens;
+
+			// parsing commands as a guest
+			switch (serverCommand) {
+				case Server_Command.ROOM_INFO: {
+					const roomInfo = JSON.parse(commandTokens.join(" "));
+					if (
+						roomInfo?.state &&
+						roomInfo.hostName &&
+						roomInfo.guests
+					) {
+						setRoomInfo(roomInfo);
+						return;
+					}
+					console.error("Issue parsing ROOM_INFO command", roomInfo);
+					return;
+				}
+				default:
+					console.error("Server Command Unknown: ", serverCommand);
+			}
+			return;
+		}
+
+		// message does not contain a server command
+		// TODO: display message in chat interface
+		setRoomInfo((prevInfo) => {
+			const newInfo = {
+				...prevInfo,
+				messages: [event.data, ...prevInfo.messages],
+			};
+			const stringifiedInfo = JSON.stringify(newInfo);
+			channel.send(`${Server_Command.ROOM_INFO} ${stringifiedInfo}`);
+
+			return newInfo;
+		});
+	}
+
+	function onMessageGetAsHost(_: RTCDataChannel, event: MessageEvent) {
+		console.log(event.data);
+		// Check if message includes a server command
+		// example: `#ROOM_INFO# {"hostName": "bilbo", ...}`
+		// WARN: This feels inefficent, fix splitting everything
+		const tokens: string[] = event.data
+			.split(" ")
+			.filter((word: string) => word);
+		if (
+			Object.values(Server_Command).includes(
+				(tokens.at(0) ?? "") as Server_Command,
+			)
+		) {
+			const [serverCommand, ...commandTokens] = tokens;
+
+			// parsing server commands as a host
+			switch (serverCommand) {
+				case Server_Command.ENTER: {
+					const guestName = commandTokens.join(" ");
+					setRoomInfo((info) => {
+						// don't allow another guest if we hit the room size
+						if (info.guests.length === ROOM_SIZE) {
+							console.error(
+								`${guestName} tried to join, but the Room already full`,
+							);
+							return info;
+						}
+						const newInfo = {
+							...info,
+							guests: [...info.guests, guestName],
+						};
+						return newInfo;
+					});
+					return;
+				}
+				default:
+					console.error("Server Command Unknown: ", serverCommand);
+			}
+			return;
+		}
+
+		// message does not contain a server command
+		// TODO: display message in chat interface
+	}
+
+	async function onCreateRoom() {
+		const roomConnections = await generateRoomConnections();
+		onNewConnections(roomConnections);
+		console.log(roomConnections);
+		console.log(JSON.stringify(roomConnections.map((pc) => pc.package)));
+		setRoomInfo((info) => ({
+			...info,
+			hostName: displayName,
+			state: Room_State.HOST_EMPTY,
+		}));
+
+		for (const connection of roomConnections) {
+			if (!connection.channel) {
+				continue;
+			}
+
+			connection.channel.onopen = function (
+				this: RTCDataChannel,
+				event: Event,
+			) {
+				console.log(event);
+				this.send(
+					`${Server_Command.ROOM_INFO} ${JSON.stringify(roomInfo)}`,
+				);
+			};
+			connection.channel.onmessage = function (
+				this: RTCDataChannel,
+				event: MessageEvent,
+			) {
+				onMessageGetAsHost(this, event);
+			};
+		}
+	}
+
+	async function onJoinRoom() {
+		const offerPackage = JSON.parse(prompt("Paste in offer") ?? "");
+		const roomConnections = await receiveConnectionOffers(offerPackage);
+		if (!roomConnections) {
+			console.error("Issue receiving connection offers");
+			return;
+		}
+		console.log(roomConnections);
+		console.log(
+			JSON.stringify(roomConnections.map((answer) => answer.package)),
+		);
+
+		// attach channel listeners
+		for (const connection of roomConnections) {
+			if (!connection.channel) {
+				continue;
+			}
+
+			connection.channel.onopen = function (
+				this: RTCDataChannel,
+				event: Event,
+			) {
+				console.log(event);
+				this.send(`${Server_Command.ENTER} ${displayName}`);
+			};
+			connection.channel.onmessage = function (
+				this: RTCDataChannel,
+				event: MessageEvent,
+			) {
+				onMessageGetAsGuest(this, event);
+			};
+		}
+	}
+
 	return (
 		<>
 			<h1>Multi User Chat</h1>
@@ -58,25 +224,14 @@ export default function MultiChat() {
 				}}
 			>
 				<CreateRoomButton
-					roomState={roomState}
-					// disabled={displayName.length === 0}
-					onCreateRoom={async () => {
-						const peerConnections = await generateRoomConnections();
-						onNewConnections(peerConnections);
-						console.log(peerConnections);
-						console.log(
-							JSON.stringify(
-								peerConnections.map((pc) => pc.package),
-							),
-						);
-						setRoomState(Room_State.HOST_EMPTY);
-					}}
+					roomState={roomInfo.state}
+					disabled={displayName.length === 0}
+					onCreateRoom={onCreateRoom}
 					onAcceptAnswer={async () => {
 						const answerPackage = JSON.parse(
 							prompt("Paste in answer") ?? "",
 						);
 						await acceptAnswer(roomConnections, answerPackage);
-						console.log(roomConnections);
 					}}
 				/>
 				<input
@@ -96,24 +251,8 @@ export default function MultiChat() {
 				<button
 					type="button"
 					title="Have Room Offer in Clipboard"
-					// disabled={displayName.length === 0}
-					onClick={async () => {
-						const offerPackage = JSON.parse(
-							prompt("Paste in offer") ?? "",
-						);
-						const answers =
-							await receiveConnectionOffers(offerPackage);
-						if (!answers) {
-							console.error("Issue receiving connection offers");
-							return;
-						}
-						console.log(answers);
-						console.log(
-							JSON.stringify(
-								answers.map((answer) => answer.package),
-							),
-						);
-					}}
+					disabled={displayName.length === 0}
+					onClick={onJoinRoom}
 				>
 					Join Room
 				</button>

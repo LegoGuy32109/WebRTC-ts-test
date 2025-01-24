@@ -1,6 +1,6 @@
 import "./App.css";
-import SimpleChat from "./simpleChat";
-import MultiChat from "./multiChat";
+import SimpleChat from "./components/simpleChat/simpleChat";
+import MultiChat from "./components/multiChat/multiChat";
 import { useState } from "react";
 
 enum Tab {
@@ -46,7 +46,7 @@ function NavTabs({
 }
 
 function App() {
-	const [currentTab, setCurrentTab] = useState(Tab.SIMPLE_CHAT);
+	const [currentTab, setCurrentTab] = useState(Tab.MULTI_CHAT);
 
 	function View() {
 		switch (currentTab) {

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { gather, recieve, accept } from "./setupRtc";
+import { gather, recieve, accept } from "../../setupRtc";
 
 function SimpleChat() {
 	const [pc, setPc] = useState<RTCPeerConnection>();

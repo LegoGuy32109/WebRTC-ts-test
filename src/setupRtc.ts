@@ -185,6 +185,7 @@ export async function recieve(
 	const answer = await newPc.createAnswer();
 	await newPc.setLocalDescription(answer);
 
+	// To indicate the offer had no more candidates, pass in undefined
 	for (const candidate of [...offerCandidates, undefined]) {
 		await newPc.addIceCandidate(candidate);
 	}
@@ -213,6 +214,7 @@ export async function accept(
 	onPopupMsg("Read answer from clipboard", 1);
 
 	pc.setRemoteDescription(answer);
+	// To indicate the offer had no more candidates, pass in undefined
 	for (const candidate of [...answerCandidates, undefined]) {
 		await pc.addIceCandidate(candidate);
 	}

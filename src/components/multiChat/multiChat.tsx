@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { receiveConnectionOffers } from "../../setupMultiRtc";
+import CreateRoomButton from "./CreateRoomButton";
 
 const MAX_USERNAME_LENGTH = 21;
 
@@ -15,9 +17,7 @@ export default function MultiChat() {
 					width: "80vw",
 				}}
 			>
-				<button type="button" disabled={displayName.length === 0}>
-					Create Room
-				</button>
+				<CreateRoomButton disabled={displayName.length === 0} />
 				<input
 					id="displayName"
 					type="text"
@@ -36,6 +36,23 @@ export default function MultiChat() {
 					type="button"
 					title="Have Room Offer in Clipboard"
 					disabled={displayName.length === 0}
+					onClick={async () => {
+						const offerPackage = JSON.parse(
+							prompt("Paste in offer") ?? "",
+						);
+						const answers =
+							await receiveConnectionOffers(offerPackage);
+						if (!answers) {
+							console.error("Issue receiving connection offers");
+							return;
+						}
+						console.log(answers);
+						console.log(
+							JSON.stringify(
+								answers.map((answer) => answer.package),
+							),
+						);
+					}}
 				>
 					Join Room
 				</button>

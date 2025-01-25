@@ -161,6 +161,7 @@ async function receiveConnectionOffer(offer: Package) {
 	return output;
 }
 
+// HOST accepting answer package from guest
 export async function acceptAnswer(
 	existingRoomConnections: RoomConnection[],
 	answerPackage: Package[],
@@ -173,13 +174,19 @@ export async function acceptAnswer(
 		return !!answer;
 	}
 
-	const roomConnection = existingRoomConnections.find(
-		({ peerConnection: pc, package: offerPkg }) =>
-			!pc.remoteDescription &&
-			offerPkg?.id &&
-			// if an answer exists, will save to local variable to be accepted
-			findGoodAnswer(offerPkg.id),
-	);
+	const roomConnection = existingRoomConnections
+		// make sure we are only looking at room connections that are "connecting"
+		.filter(
+			(connection) =>
+				connection.peerConnection.connectionState === "connecting",
+		)
+		.find(
+			({ peerConnection: pc, package: offerPkg }) =>
+				!pc.remoteDescription &&
+				offerPkg?.id &&
+				// if an answer exists, will save to local variable to be accepted
+				findGoodAnswer(offerPkg.id),
+		);
 
 	if (!roomConnection || !goodAnswer) {
 		console.error(

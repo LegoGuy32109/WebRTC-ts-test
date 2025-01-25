@@ -24,6 +24,11 @@ export enum Room_State {
 	GUEST_IN = 5,
 }
 
+interface Guest {
+	id: string;
+	name: string;
+}
+
 export default function MultiChat() {
 	// save offer text to be shared again if button shift clicked
 	const [offerText, setOfferText] = useState("");
@@ -32,12 +37,13 @@ export default function MultiChat() {
 	const [roomInfo, setRoomInfo] = useState({
 		state: Room_State.DEFAULT,
 		hostName: "",
-		guests: [] as string[],
+		guests: [] as Guest[],
 		messages: [] as string[],
 	});
 	const [roomConnections, setRoomConnections] = useState(
 		[] as RoomConnection[],
 	);
+
 	const [guestChannel, setGuestChannel] = useState<
 		RTCDataChannel | undefined
 	>(undefined);
@@ -50,14 +56,31 @@ export default function MultiChat() {
 				room.peerConnection.close();
 			}
 
+			console.log("new connections:", connections);
 			return connections;
 		});
 	}
 
-	function onMessageGetAsGuest(
-		channel: RTCDataChannel,
-		event: MessageEvent,
+	// I have to pass in state variable for room connections cause closure
+	function sendMessageToGuests(
+		msg: string,
+		roomConnections: RoomConnection[],
 	) {
+		let sentMsg = false;
+
+		for (const rc of roomConnections) {
+			if (rc.channel?.readyState === "open") {
+				rc.channel.send(msg);
+				sentMsg = true;
+			}
+		}
+
+		if (!sentMsg) {
+			console.error("No open channels to send message: ", msg);
+		}
+	}
+
+	function onMessageGetAsGuest(_: RTCDataChannel, event: MessageEvent) {
 		console.log(event.data);
 		// Check if message includes a server command
 		// example: `#ROOM_INFO# {"hostName": "bilbo", ...}`
@@ -95,19 +118,25 @@ export default function MultiChat() {
 
 		// message does not contain a server command
 		// TODO: display message in chat interface
-		setRoomInfo((prevInfo) => {
-			const newInfo = {
-				...prevInfo,
-				messages: [event.data, ...prevInfo.messages],
-			};
-			const stringifiedInfo = JSON.stringify(newInfo);
-			channel.send(`${Server_Command.ROOM_INFO} ${stringifiedInfo}`);
-
-			return newInfo;
-		});
+		//
+		// setRoomInfo((prevInfo) => {
+		// 	const newInfo = {
+		// 		...prevInfo,
+		// 		messages: [event.data, ...prevInfo.messages],
+		// 	};
+		// 	const stringifiedInfo = JSON.stringify(newInfo);
+		// 	channel.send(`${Server_Command.ROOM_INFO} ${stringifiedInfo}`);
+		//
+		// 	return newInfo;
+		// });
 	}
 
-	function onMessageGetAsHost(_: RTCDataChannel, event: MessageEvent) {
+	// pass in room connections state variable or the state is lost from closure
+	function onMessageGetAsHost(
+		channel: RTCDataChannel,
+		event: MessageEvent,
+		roomConnections: RoomConnection[],
+	) {
 		console.log(event.data);
 		// Check if message includes a server command
 		// example: `#ROOM_INFO# {"hostName": "bilbo", ...}`
@@ -133,10 +162,22 @@ export default function MultiChat() {
 							);
 							return info;
 						}
+						for (const rc of roomConnections) {
+							console.log(
+								rc.channel === channel,
+								rc.channel,
+								channel,
+							);
+						}
 						const newInfo = {
 							...info,
-							guests: [...info.guests, guestName],
+							guests: [...info.guests, { id: "", name: guestName }],
 						};
+
+						sendMessageToGuests(
+							`${Server_Command.ROOM_INFO} ${JSON.stringify(newInfo)}`,
+							roomConnections,
+						);
 						return newInfo;
 					});
 					return;
@@ -186,7 +227,7 @@ export default function MultiChat() {
 				this: RTCDataChannel,
 				event: MessageEvent,
 			) {
-				onMessageGetAsHost(this, event);
+				onMessageGetAsHost(this, event, roomConnections);
 			};
 		}
 	}
@@ -248,6 +289,14 @@ export default function MultiChat() {
 		}
 	}
 
+	function onChatMessage(message: string) {
+		if (guestChannel) {
+			guestChannel.send(message);
+			return;
+		}
+		// otherwise we are a host sending a message
+	}
+
 	return (
 		<>
 			<h1>Multi User Chat</h1>
@@ -274,6 +323,7 @@ export default function MultiChat() {
 							// prompt("Paste in answer") ?? "",
 							await navigator.clipboard.readText(),
 						);
+						console.log(roomConnections);
 						await acceptAnswer(roomConnections, answerPackage);
 					}}
 				/>
@@ -323,10 +373,7 @@ export default function MultiChat() {
 						onClick={(event) => {
 							event.preventDefault();
 							setMsgToSend("");
-
-							if (guestChannel) {
-								guestChannel.send(msgToSend);
-							}
+							onChatMessage(msgToSend);
 						}}
 					>
 						Send

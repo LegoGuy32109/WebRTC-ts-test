@@ -6,6 +6,7 @@ import {
 	type RoomConnection,
 } from "../../setupMultiRtc";
 import CreateRoomButton from "./CreateRoomButton";
+import ChatWindow from "./ChatWindow";
 
 const MAX_USERNAME_LENGTH = 21;
 export const ROOM_SIZE = 4;
@@ -24,9 +25,21 @@ export enum Room_State {
 	GUEST_IN = 5,
 }
 
-interface Guest {
+interface User {
 	id: string;
 	name: string;
+}
+
+interface Message {
+	userId: string;
+	data: string;
+}
+
+export interface RoomInfo {
+	state: Room_State;
+	host: User;
+	guests: User[];
+	messages: Message[];
 }
 
 export default function MultiChat() {
@@ -34,20 +47,19 @@ export default function MultiChat() {
 	const [offerText, setOfferText] = useState("");
 
 	const [displayName, setDisplayName] = useState("");
-	const [roomInfo, setRoomInfo] = useState({
+	const [roomInfo, setRoomInfo] = useState<RoomInfo>({
 		state: Room_State.DEFAULT,
-		hostName: "",
-		guests: [] as Guest[],
-		messages: [] as string[],
+		host: {} as User,
+		guests: [] as User[],
+		messages: [] as Message[],
 	});
-	const [roomConnections, setRoomConnections] = useState(
-		[] as RoomConnection[],
-	);
+	const [roomConnections, setRoomConnections] = useState<
+		RoomConnection[]
+	>([]);
 
 	const [guestChannel, setGuestChannel] = useState<
 		RTCDataChannel | undefined
 	>(undefined);
-	const [msgToSend, setMsgToSend] = useState("");
 
 	function onNewConnections(connections: RoomConnection[]) {
 		// close all connections to terminate unused channels
@@ -56,7 +68,6 @@ export default function MultiChat() {
 				room.peerConnection.close();
 			}
 
-			console.log("new connections:", connections);
 			return connections;
 		});
 	}
@@ -81,9 +92,8 @@ export default function MultiChat() {
 	}
 
 	function onMessageGetAsGuest(_: RTCDataChannel, event: MessageEvent) {
-		console.log(event.data);
 		// Check if message includes a server command
-		// example: `#ROOM_INFO# {"hostName": "bilbo", ...}`
+		// example: `#ROOM_INFO# {"host": {"name": bilbo", ...`
 		// WARN: This feels inefficent, fix splitting everything
 		const tokens: string[] = event.data
 			.split(" ")
@@ -100,7 +110,7 @@ export default function MultiChat() {
 					const roomInfo = JSON.parse(commandTokens.join(" "));
 					// remove state param, as a guest state is different from host
 					const { state, ...validRoomInfo } = roomInfo;
-					if (!validRoomInfo.hostName || !validRoomInfo.guests) {
+					if (!validRoomInfo.host.name || !validRoomInfo.guests) {
 						console.error(
 							"Issue parsing ROOM_INFO command",
 							roomInfo,
@@ -117,18 +127,7 @@ export default function MultiChat() {
 		}
 
 		// message does not contain a server command
-		// TODO: display message in chat interface
-		//
-		// setRoomInfo((prevInfo) => {
-		// 	const newInfo = {
-		// 		...prevInfo,
-		// 		messages: [event.data, ...prevInfo.messages],
-		// 	};
-		// 	const stringifiedInfo = JSON.stringify(newInfo);
-		// 	channel.send(`${Server_Command.ROOM_INFO} ${stringifiedInfo}`);
-		//
-		// 	return newInfo;
-		// });
+		// should only be recieving server commands, messages are communicated through the room info
 	}
 
 	// pass in room connections state variable or the state is lost from closure
@@ -137,9 +136,17 @@ export default function MultiChat() {
 		event: MessageEvent,
 		roomConnections: RoomConnection[],
 	) {
-		console.log(event.data);
+		// try to determine where connection message came from
+		const connectionThatSentMsg = roomConnections.find(
+			(rc) => rc.channel === channel,
+		);
+		if (!connectionThatSentMsg?.package?.id) {
+			console.error("Origin of message could not be determined", event);
+			return;
+		}
+
 		// Check if message includes a server command
-		// example: `#ROOM_INFO# {"hostName": "bilbo", ...}`
+		// example: `#ROOM_INFO# {"host": {"name": "bilbo", ...`
 		// WARN: This feels inefficent, fix splitting everything
 		const tokens: string[] = event.data
 			.split(" ")
@@ -162,16 +169,20 @@ export default function MultiChat() {
 							);
 							return info;
 						}
-						for (const rc of roomConnections) {
-							console.log(
-								rc.channel === channel,
-								rc.channel,
-								channel,
-							);
+
+						// checked earlier, but checked again here for typescript
+						if (!connectionThatSentMsg.package?.id) {
+							return info;
 						}
 						const newInfo = {
 							...info,
-							guests: [...info.guests, { id: "", name: guestName }],
+							guests: [
+								...info.guests,
+								{
+									id: connectionThatSentMsg.package.id,
+									name: guestName,
+								},
+							],
 						};
 
 						sendMessageToGuests(
@@ -189,17 +200,38 @@ export default function MultiChat() {
 		}
 
 		// message does not contain a server command
-		// TODO: display message in chat interface
+		// display this message in chat interface storing in messages
+		setRoomInfo((info) => {
+			// checked earlier, but checked again here for typescript
+			if (!connectionThatSentMsg.package?.id) {
+				return info;
+			}
+
+			const newInfo = {
+				...info,
+				messages: [
+					{
+						userId: connectionThatSentMsg.package.id,
+						data: event.data,
+					},
+					...info.messages,
+				],
+			};
+			// share update to the room information to guests
+			sendMessageToGuests(
+				`${Server_Command.ROOM_INFO} ${JSON.stringify(newInfo)}`,
+				roomConnections,
+			);
+			return newInfo;
+		});
 	}
 
 	async function onCreateRoom() {
 		const roomConnections = await generateRoomConnections();
 		onNewConnections(roomConnections);
-		console.log(roomConnections);
 		const offerPackage = JSON.stringify(
 			roomConnections.map((pc) => pc.package),
 		);
-		console.log(offerPackage);
 		setOfferText(offerPackage);
 		await navigator.clipboard
 			.writeText(offerPackage)
@@ -207,7 +239,7 @@ export default function MultiChat() {
 
 		setRoomInfo((info) => ({
 			...info,
-			hostName: displayName,
+			host: { name: displayName, id: crypto.randomUUID() },
 			state: Room_State.HOST_EMPTY,
 		}));
 
@@ -221,6 +253,8 @@ export default function MultiChat() {
 				this: RTCDataChannel,
 				event: Event,
 			) {
+				// TODO: disable functions
+				// trigger state update
 				console.log(event);
 			};
 			connection.channel.onmessage = function (
@@ -247,7 +281,6 @@ export default function MultiChat() {
 			...room,
 			state: Room_State.GUEST_JOINING,
 		}));
-		console.log(roomConnections);
 		const answerPackage = JSON.stringify(
 			roomConnections.map((answer) => answer.package),
 		);
@@ -265,7 +298,6 @@ export default function MultiChat() {
 				this: RTCDataChannel,
 				event: Event,
 			) {
-				console.log(event);
 				this.send(`${Server_Command.ENTER} ${displayName}`);
 				setGuestChannel(this);
 
@@ -275,7 +307,6 @@ export default function MultiChat() {
 					if (
 						connection.package?.id !== connectionToDelete.package?.id
 					) {
-						console.log("closing", connectionToDelete);
 						connectionToDelete.peerConnection.close();
 					}
 				}
@@ -295,6 +326,21 @@ export default function MultiChat() {
 			return;
 		}
 		// otherwise we are a host sending a message
+		setRoomInfo((info) => {
+			const newInfo = {
+				...info,
+				messages: [
+					{ userId: info.host.id, data: message },
+					...info.messages,
+				],
+			};
+
+			sendMessageToGuests(
+				`${Server_Command.ROOM_INFO} ${JSON.stringify(newInfo)}`,
+				roomConnections,
+			);
+			return newInfo;
+		});
 	}
 
 	return (
@@ -320,10 +366,8 @@ export default function MultiChat() {
 						}
 
 						const answerPackage = JSON.parse(
-							// prompt("Paste in answer") ?? "",
 							await navigator.clipboard.readText(),
 						);
-						console.log(roomConnections);
 						await acceptAnswer(roomConnections, answerPackage);
 					}}
 				/>
@@ -357,29 +401,7 @@ export default function MultiChat() {
 					Join Room
 				</button>
 			</nav>
-			<div>
-				<form>
-					<input
-						type="text"
-						value={msgToSend}
-						onChange={(evt) => setMsgToSend(evt.target.value)}
-						style={{
-							fontSize: "1em",
-							fontFamily: "monospace",
-						}}
-					/>
-					<button
-						type="submit"
-						onClick={(event) => {
-							event.preventDefault();
-							setMsgToSend("");
-							onChatMessage(msgToSend);
-						}}
-					>
-						Send
-					</button>
-				</form>
-			</div>
+			<ChatWindow onChatMessage={onChatMessage} roomInfo={roomInfo} />
 		</>
 	);
 }

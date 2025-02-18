@@ -296,7 +296,7 @@ export default function MultiChat() {
 			// on channel open as GUEST
 			connection.channel.onopen = function (
 				this: RTCDataChannel,
-				event: Event,
+				_event: Event,
 			) {
 				this.send(`${Server_Command.ENTER} ${displayName}`);
 				setGuestChannel(this);

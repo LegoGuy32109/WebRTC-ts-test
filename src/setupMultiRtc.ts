@@ -175,11 +175,8 @@ export async function acceptAnswer(
 	}
 
 	const roomConnection = existingRoomConnections
-		// make sure we are only looking at room connections that are "connecting"
-		.filter(
-			(connection) =>
-				connection.peerConnection.connectionState === "connecting",
-		)
+		// make sure we are only looking at room connections that aren't connected to a peer
+		.filter((connection) => !connection.peerConnection.remoteDescription)
 		.find(
 			({ peerConnection: pc, package: offerPkg }) =>
 				!pc.remoteDescription &&
